@@ -33,7 +33,7 @@ class AudienceStep:
         self.model = model
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(4, 6, "Zielgruppe (Analytics-basiert)")
+        await self.ui.begin_step(4, 8, "Zielgruppe (Analytics-basiert)")
 
         # 1) Scraper-Pfad: snapshot.audience wurde bereits in Step 1 mitgescrapt
         if state.snapshot and state.snapshot.audience:

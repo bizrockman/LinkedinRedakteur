@@ -37,7 +37,7 @@ class TopPostsStep:
         self.prompts = prompts
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(5, 6, "Erfolgreichste Posts (Stil-Anker)")
+        await self.ui.begin_step(5, 8, "Erfolgreichste Posts (Stil-Anker)")
 
         if state.snapshot and state.snapshot.posts:
             await self._scraper_path(state)

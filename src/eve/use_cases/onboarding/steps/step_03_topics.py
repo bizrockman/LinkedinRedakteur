@@ -33,7 +33,7 @@ class TopicsStep:
         self.model = model
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(3, 6, "Themen / Topics")
+        await self.ui.begin_step(3, 8, "Themen / Topics")
 
         topics = await self._generate(state)
 

@@ -18,7 +18,7 @@ class BasicInfoStep:
         self.ui = ui
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(2, 6, "LinkedIn Claim & Info-Text")
+        await self.ui.begin_step(2, 8, "LinkedIn Claim & Info-Text")
 
         scraped_headline = state.snapshot.headline if state.snapshot else ""
         scraped_about = state.snapshot.about if state.snapshot else ""

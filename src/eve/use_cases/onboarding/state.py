@@ -18,3 +18,7 @@ class WizardState(BaseModel):
     snapshot: LinkedInProfileSnapshot | None = None
     profile: ClientProfile = Field(default_factory=ClientProfile)
     stored_posts: list[StoredPost] = Field(default_factory=list)
+
+    # Mock-Daten aus Steps 7+8 (werden bei aktivem Adapter konsumiert)
+    telegram_mock: dict = Field(default_factory=dict)
+    linkedin_mock: dict = Field(default_factory=dict)

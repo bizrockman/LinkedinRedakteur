@@ -16,6 +16,8 @@ from eve.use_cases.onboarding.steps.step_03_topics import TopicsStep
 from eve.use_cases.onboarding.steps.step_04_audience import AudienceStep
 from eve.use_cases.onboarding.steps.step_05_posts import TopPostsStep
 from eve.use_cases.onboarding.steps.step_06_personas import PersonasStep
+from eve.use_cases.onboarding.steps.step_07_telegram import TelegramMockStep
+from eve.use_cases.onboarding.steps.step_08_linkedin import LinkedInMockStep
 from eve.use_cases.onboarding.ui import WizardUI
 
 log = logging.getLogger(__name__)
@@ -62,6 +64,8 @@ class OnboardingWizard:
         state = await AudienceStep(self.ui, self.llm, self.prompts, model=self.llm_model).run(state)
         state = await TopPostsStep(self.ui, self.prompts).run(state)
         state = await PersonasStep(self.ui, self.llm, self.prompts, model=self.llm_model).run(state)
+        state = await TelegramMockStep(self.ui).run(state)
+        state = await LinkedInMockStep(self.ui).run(state)
 
         saved = await self.prompts.save_profile(state.profile)
         await self.ui.info(

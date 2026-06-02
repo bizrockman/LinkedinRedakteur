@@ -38,7 +38,7 @@ class PersonasStep:
         self.model = model
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(6, 6, "Kunden-Avatare (Buyer Personas)")
+        await self.ui.begin_step(6, 8, "Kunden-Avatare (Buyer Personas)")
 
         if not state.profile.audience.description:
             await self.ui.warn(

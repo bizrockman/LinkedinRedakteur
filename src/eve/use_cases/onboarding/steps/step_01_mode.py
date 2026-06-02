@@ -32,7 +32,7 @@ class ChooseModeStep:
         self.ui = ui
 
     async def run(self, state: WizardState) -> WizardState:
-        await self.ui.begin_step(1, 6, "Modus & (optional) LinkedIn-Daten holen")
+        await self.ui.begin_step(1, 8, "Modus & (optional) LinkedIn-Daten holen")
 
         await self.ui.info(
             "Zwei Wege, dein LinkedIn-Profil zu erfassen:\n\n"
