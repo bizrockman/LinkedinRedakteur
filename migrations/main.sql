@@ -51,6 +51,26 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+-- Wenn der Type bereits aus einer früheren Version existiert, ggf. fehlende
+-- Werte nachziehen. ALTER TYPE ADD VALUE IF NOT EXISTS ist seit Postgres 9.6
+-- verfügbar und idempotent — kann beliebig oft laufen.
+ALTER TYPE eve_message_source ADD VALUE IF NOT EXISTS 'telegram';
+ALTER TYPE eve_message_source ADD VALUE IF NOT EXISTS 'cli';
+ALTER TYPE eve_message_source ADD VALUE IF NOT EXISTS 'web';
+ALTER TYPE eve_message_source ADD VALUE IF NOT EXISTS 'system';
+
+-- Selbiges Sicherheits-Netz für die anderen Enums:
+ALTER TYPE eve_post_status ADD VALUE IF NOT EXISTS 'draft';
+ALTER TYPE eve_post_status ADD VALUE IF NOT EXISTS 'ready';
+ALTER TYPE eve_post_status ADD VALUE IF NOT EXISTS 'posted';
+ALTER TYPE eve_post_status ADD VALUE IF NOT EXISTS 'error';
+ALTER TYPE eve_post_status ADD VALUE IF NOT EXISTS 'archived';
+
+ALTER TYPE eve_post_source ADD VALUE IF NOT EXISTS 'eve';
+ALTER TYPE eve_post_source ADD VALUE IF NOT EXISTS 'linkedin_import';
+ALTER TYPE eve_post_source ADD VALUE IF NOT EXISTS 'gdpr_import';
+ALTER TYPE eve_post_source ADD VALUE IF NOT EXISTS 'manual_import';
+
 -- ----------------------------------------------------------------------------
 -- eve_posts — Editorial Plan + historisches Archiv
 --
