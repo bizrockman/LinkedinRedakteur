@@ -10,18 +10,38 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import uuid4
+
+import httpx
 
 from eve.agent.tools.base import ToolDefinition
-from eve.core.ports import ImageGenerator
+from eve.core.ports import FileStorage, ImageGenerator
 
 log = logging.getLogger(__name__)
 
+DEFAULT_STORAGE_PATH_PREFIX = "posts"
+
 
 class GenerateImageTool:
-    """Generiert ein Bild für den aktuellen Post via fal.ai."""
+    """Generiert ein Bild für den aktuellen Post via fal.ai.
 
-    def __init__(self, generator: ImageGenerator) -> None:
+    Wenn ein FileStorage konfiguriert ist (Supabase Storage), wird das Bild
+    automatisch von fal.ai's CDN nach `<bucket>/posts/<uuid>.png` migriert —
+    so überlebt es auch wenn fal.ai die Datei nach 24h löscht.
+    """
+
+    def __init__(
+        self,
+        generator: ImageGenerator,
+        *,
+        storage: FileStorage | None = None,
+        bucket: str | None = None,
+        storage_path_prefix: str = DEFAULT_STORAGE_PATH_PREFIX,
+    ) -> None:
         self.generator = generator
+        self.storage = storage
+        self.bucket = bucket
+        self.storage_path_prefix = storage_path_prefix
 
     @property
     def definition(self) -> ToolDefinition:
@@ -92,11 +112,52 @@ class GenerateImageTool:
             )
 
         ref_count = result.metadata.get("reference_count", 0)
+        final_url = result.url
+        persisted = False
+
+        # Wenn Storage + Bucket konfiguriert: Bild von fal.ai-CDN in unseren Bucket migrieren
+        if self.storage is not None and self.bucket:
+            try:
+                persisted_url = await self._persist_to_storage(result.url)
+                final_url = persisted_url
+                persisted = True
+            except Exception as e:
+                log.warning("Storage-Upload fehlgeschlagen, nutze fal.ai-URL: %s", e)
+
         return (
             f"✓ Bild generiert.\n"
-            f"  URL:        {result.url}\n"
+            f"  URL:        {final_url}\n"
             f"  Modell:     {result.model}\n"
             f"  References: {ref_count}\n"
+            f"  Persistent: {'ja (Supabase Storage)' if persisted else 'nein (fal.ai-CDN, ~24h)'}\n"
             "\n"
             "Übergib diese URL als `creative_url` an `create_post`."
         )
+
+    async def _persist_to_storage(self, fal_url: str) -> str:
+        """Lädt das Bild von fal.ai-CDN runter, uploaded in Supabase Storage."""
+        assert self.storage is not None and self.bucket is not None
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(fal_url)
+            r.raise_for_status()
+            image_bytes = r.content
+            content_type = r.headers.get("content-type", "image/png")
+
+        # Dateiendung aus Content-Type bestimmen
+        ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(
+            content_type.lower().split(";")[0].strip(), "png"
+        )
+        path = f"{self.storage_path_prefix}/{uuid4().hex}.{ext}"
+
+        public_url = await self.storage.upload(
+            bucket=self.bucket,
+            path=path,
+            data=image_bytes,
+            content_type=content_type,
+        )
+        log.info(
+            "Bild migriert: %d Bytes → %s/%s (%s)",
+            len(image_bytes), self.bucket, path, content_type,
+        )
+        return public_url

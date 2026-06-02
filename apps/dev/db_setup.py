@@ -36,6 +36,7 @@ from supabase import create_client  # noqa: E402
 from eve.config import get_settings  # noqa: E402
 from eve.use_cases.db_migrations import (  # noqa: E402
     dashboard_sql_editor_url,
+    discover_all_migrations,
     discover_migrations,
 )
 
@@ -145,7 +146,7 @@ def cmd_check(console: Console, url: str, key: str) -> int:
 
 
 def cmd_migrate(console: Console, *, open_browser: bool) -> int:
-    """Zeigt die SQL-Migrations + Deep-Link zum Dashboard SQL Editor."""
+    """Zeigt das Setup-SQL + Deep-Link zum Dashboard SQL Editor."""
     project_root = Path(__file__).resolve().parents[2]
     migrations = discover_migrations(project_root / "migrations")
 
@@ -158,32 +159,36 @@ def cmd_migrate(console: Console, *, open_browser: bool) -> int:
     if not ref:
         console.print(
             "[yellow]SUPABASE_URL ist Self-Host — kein Dashboard-Link.[/yellow]\n"
-            "Wende die SQL-Files manuell auf deiner Self-Host-Instanz an."
+            "Wende das SQL manuell auf deiner Self-Host-Instanz an."
         )
 
-    table = Table(title="Verfügbare Migrations", show_header=True)
-    table.add_column("#", style="bold cyan", width=3)
+    table = Table(title="Setup-SQL", show_header=True)
+    table.add_column("", style="bold cyan", width=2)
     table.add_column("Datei", style="bold")
-    table.add_column("SHA-256 (kurz)", style="dim")
     table.add_column("Zeilen", justify="right")
 
-    for i, m in enumerate(migrations, 1):
+    for m in migrations:
         line_count = m.content.count("\n")
-        table.add_row(str(i), m.filename, m.sha256[:16], str(line_count))
+        table.add_row("→", m.filename, str(line_count))
     console.print(table)
+
+    main_file = migrations[0].filename
 
     if ref:
         url = dashboard_sql_editor_url(ref)
         console.print(
             Panel(
-                f"So wendest du eine Migration an:\n\n"
-                f"  1. SQL-Editor öffnen: [link]{url}[/link]\n"
-                f"  2. Inhalt der SQL-Datei reinkopieren\n"
-                f"  3. [bold]Run[/bold] drücken\n\n"
-                f"Oder lass dir das SQL direkt ins Terminal drucken:\n"
-                f"  [cyan]uv run python -m apps.dev.db_setup print --file {migrations[0].filename}[/cyan]\n\n"
-                f"Für CI/CD später: [bold]Supabase CLI[/bold] (`supabase db push`).",
-                title="[bold]Nächste Schritte",
+                f"So setzt du das Schema auf (einmalig, dauert ~10 Sekunden):\n\n"
+                f"  [bold]1.[/bold] SQL-Editor öffnen:\n"
+                f"     [link]{url}[/link]\n\n"
+                f"  [bold]2.[/bold] SQL ins Clipboard:\n"
+                f"     [cyan]uv run eve db print --plain[/cyan]\n"
+                f"     (alternativ direkt im Terminal anschauen: "
+                f"[cyan]uv run eve db print[/cyan])\n\n"
+                f"  [bold]3.[/bold] Im SQL Editor pasten + [bold]Run[/bold] klicken\n\n"
+                f"Das Setup ist [bold]idempotent[/bold] — kannst du mehrmals laufen lassen, "
+                f"ohne dass etwas kaputt geht.",
+                title=f"[bold]Setup-Anleitung — {main_file}",
                 border_style="cyan",
             )
         )
@@ -194,20 +199,24 @@ def cmd_migrate(console: Console, *, open_browser: bool) -> int:
     return 0
 
 
-def cmd_print(console: Console, filename: str | None, *, plain: bool) -> int:
+def cmd_print(console: Console, filename: str | None, *, plain: bool, show_all: bool) -> int:
     """Druckt eine SQL-Datei zum Copy-Paste in den SQL Editor."""
     project_root = Path(__file__).resolve().parents[2]
-    migrations = discover_migrations(project_root / "migrations")
+    pool = (
+        discover_all_migrations(project_root / "migrations")
+        if show_all or filename is not None
+        else discover_migrations(project_root / "migrations")
+    )
 
-    if not migrations:
+    if not pool:
         console.print("[yellow]Keine Migrations gefunden.[/yellow]")
         return 1
 
-    target = next((m for m in migrations if m.filename == filename), None) if filename else migrations[0]
+    target = next((m for m in pool if m.filename == filename), None) if filename else pool[0]
     if target is None:
         console.print(f"[red]Datei '{filename}' nicht gefunden.[/red]")
         console.print("Verfügbar:")
-        for m in migrations:
+        for m in pool:
             console.print(f"  • {m.filename}")
         return 1
 
@@ -231,7 +240,9 @@ async def main(args: argparse.Namespace) -> int:
     console = Console()
 
     if args.command == "print":
-        return cmd_print(console, args.file, plain=args.plain)
+        return cmd_print(
+            console, args.file, plain=args.plain, show_all=getattr(args, "all", False)
+        )
 
     creds = _ensure_credentials(console)
     if creds is None:
@@ -272,6 +283,11 @@ def cli() -> None:
         action="store_true",
         help="Bei `print`: nur reiner SQL-Text, ohne Rahmen/Highlighting "
         "(ideal für Pipe in Datei)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Bei `print`: zeige auch nummerierte History-Migrations (0001_, 0002_, ...)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()

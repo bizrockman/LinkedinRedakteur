@@ -1,8 +1,7 @@
-"""Posts-Tools — CRUD-Operationen gegen die JSON-Sidecar via PromptRepository.
+"""Posts-Tools — CRUD-Operationen via PostsRepository.
 
-Solange Supabase-Posts-Adapter nicht implementiert ist, lebt die Posts-Liste
-in `prompts/profiles/<profile_id>.posts.json`. Genau das was n8n's Airtable
-Tools machen, nur lokal.
+Verwendet PostsRepository-Port — Container entscheidet ob Filesystem-Sidecar
+oder Supabase. Tools sind agnostisch.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from uuid import UUID
 
 from eve.agent.tools.base import ToolDefinition
 from eve.core.entities import PostSource, PostStatus, StoredPost
-from eve.core.ports import PromptRepository
+from eve.core.ports import PostsRepository
 
 log = logging.getLogger(__name__)
 
@@ -22,8 +21,8 @@ log = logging.getLogger(__name__)
 class SearchPostsTool:
     """Sucht in den gespeicherten Posts (für Dedup, Stilreferenz, Coverage-Check)."""
 
-    def __init__(self, prompts: PromptRepository, profile_id: str) -> None:
-        self.prompts = prompts
+    def __init__(self, repo: PostsRepository, profile_id: str) -> None:
+        self.repo = repo
         self.profile_id = profile_id
 
     @property
@@ -58,24 +57,20 @@ class SearchPostsTool:
         )
 
     async def execute(self, args: dict[str, Any]) -> str:
-        all_posts = await self.prompts.load_posts(self.profile_id)
-        query = (args.get("query") or "").strip().lower()
-        status = args.get("status")
+        query = args.get("query") or None
+        status_str = args.get("status")
+        status = PostStatus(status_str) if status_str else None
         limit = int(args.get("limit", 10))
 
-        matches = []
-        for p in all_posts:
-            if status and p.status != status:
-                continue
-            if query and query not in p.text.lower():
-                continue
-            matches.append(p)
+        matches = await self.repo.search(
+            profile_id=self.profile_id,
+            query=query,
+            status=status,
+            limit=limit,
+        )
 
         if not matches:
             return f"Keine Posts gefunden (query={query!r}, status={status})."
-
-        matches.sort(key=lambda p: p.posted_at or datetime.min, reverse=True)
-        matches = matches[:limit]
 
         lines = [f"Gefunden: {len(matches)} Posts:"]
         for i, p in enumerate(matches, 1):
@@ -91,8 +86,8 @@ class SearchPostsTool:
 class CreatePostTool:
     """Legt einen neuen Post-Draft an."""
 
-    def __init__(self, prompts: PromptRepository, profile_id: str) -> None:
-        self.prompts = prompts
+    def __init__(self, repo: PostsRepository, profile_id: str) -> None:
+        self.repo = repo
         self.profile_id = profile_id
 
     @property
@@ -115,11 +110,11 @@ class CreatePostTool:
                     },
                     "creative_url": {
                         "type": "string",
-                        "description": "Optional URL zum begleitenden Bild (fal.ai-Output)",
+                        "description": "Optional URL zum begleitenden Bild (idealerweise Supabase-Storage-URL nach generate_image)",
                     },
                     "creative_prompt": {
                         "type": "string",
-                        "description": "Optional der Prompt mit dem das Bild generiert wurde (für späteres Re-Generieren)",
+                        "description": "Optional der Prompt mit dem das Bild generiert wurde (für Re-Generieren)",
                     },
                 },
                 "required": ["text"],
@@ -144,6 +139,7 @@ class CreatePostTool:
             metadata["creative_prompt"] = creative_prompt
 
         post = StoredPost(
+            profile_id=self.profile_id,
             text=text,
             status=PostStatus.DRAFT,
             source=PostSource.EVE,
@@ -152,25 +148,22 @@ class CreatePostTool:
             metadata=metadata,
         )
 
-        existing = await self.prompts.load_posts(self.profile_id)
-        existing.append(post)
-        await self.prompts.save_posts(existing, profile_id=self.profile_id)
-
-        log.info("Created post id=%s for profile=%s", post.id, self.profile_id)
+        created = await self.repo.create(post)
+        log.info("Created post id=%s for profile=%s", created.id, self.profile_id)
         return (
             f"✓ Post angelegt:\n"
-            f"  id:            {post.id}\n"
-            f"  status:        draft\n"
+            f"  id:            {created.id}\n"
+            f"  status:        {created.status.value}\n"
             f"  scheduled_for: {scheduled_for.isoformat() if scheduled_for else 'nicht gesetzt'}\n"
-            f"  creative_url:  {post.creative_url or '—'}"
+            f"  creative_url:  {created.creative_url or '—'}"
         )
 
 
 class UpdatePostTool:
     """Updated einen existierenden Post (Status, Datum, Text)."""
 
-    def __init__(self, prompts: PromptRepository, profile_id: str) -> None:
-        self.prompts = prompts
+    def __init__(self, repo: PostsRepository, profile_id: str) -> None:
+        self.repo = repo
         self.profile_id = profile_id
 
     @property
@@ -205,9 +198,8 @@ class UpdatePostTool:
         except ValueError:
             return f"Fehler: ungültige UUID '{post_id_str}'"
 
-        all_posts = await self.prompts.load_posts(self.profile_id)
-        target = next((p for p in all_posts if p.id == post_id), None)
-        if target is None:
+        target = await self.repo.get(post_id)
+        if target is None or target.profile_id != self.profile_id:
             return f"Post mit id={post_id} nicht gefunden."
 
         if (text := args.get("text")) is not None:
@@ -222,6 +214,5 @@ class UpdatePostTool:
         if (cu := args.get("creative_url")) is not None:
             target.creative_url = cu
 
-        target.updated_at = datetime.utcnow()
-        await self.prompts.save_posts(all_posts, profile_id=self.profile_id)
-        return f"✓ Post id={post_id} aktualisiert. status={target.status}"
+        updated = await self.repo.update(target)
+        return f"✓ Post id={post_id} aktualisiert. status={updated.status.value}"

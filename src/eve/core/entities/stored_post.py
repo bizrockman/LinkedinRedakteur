@@ -34,6 +34,7 @@ class StoredPost(BaseModel):
     model_config = ConfigDict(frozen=False)
 
     id: UUID = Field(default_factory=uuid4)
+    profile_id: str = ""                 # zugeordneter Profile-Kontext (multi-tenant)
     text: str
     status: PostStatus = PostStatus.POSTED
     source: PostSource = PostSource.EVE

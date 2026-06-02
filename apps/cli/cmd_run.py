@@ -5,6 +5,11 @@ Modi:
     telegram   — Telegram-Bot + Scheduler (Stage 4)
     scheduler  — Nur Auto-Post-Job (Stage 3)
     all        — Telegram + Scheduler + (optional) CLI
+
+Persistenz: wenn SUPABASE_URL + SUPABASE_SERVICE_KEY gesetzt sind, werden
+Posts + Chat-History in Supabase persistiert (eve_posts / eve_chat_histories)
+und Bilder in den Storage-Bucket migriert. Sonst Filesystem-Sidecar +
+In-Memory-History als Fallback.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from rich.prompt import Prompt
 
 from eve.adapters.llm.anthropic_provider import AnthropicProvider
 from eve.adapters.messaging.cli_messenger import CLIMessenger
+from eve.adapters.persistence.fs_posts_repository import FilesystemPostsRepository
 from eve.adapters.persistence.fs_prompt_repository import FilesystemPromptRepository
 from eve.adapters.persistence.in_memory_chat_memory import InMemoryChatMemory
 from eve.agent.agent import EveAgent
@@ -34,6 +40,7 @@ from eve.agent.tools import (
 )
 from eve.config import get_settings
 from eve.core.entities import IncomingMessage, MessageSource
+from eve.core.ports import ChatMemory, FileStorage, PostsRepository
 from eve.use_cases.message_router import MessageRouter
 
 log = logging.getLogger(__name__)
@@ -59,8 +66,7 @@ async def run_main_process(*, mode: str, profile_id: str | None) -> int:
 
 
 async def _run_chat_mode(console: Console, profile_id: str | None) -> int:
-    """CLI-Chat mit echtem EveAgent (Anthropic + Tools + In-Memory History)."""
-    # --- Credentials prüfen
+    """CLI-Chat mit echtem EveAgent (Anthropic + Tools + Persistenz)."""
     settings = get_settings()
     if not settings.anthropic_api_key:
         console.print(
@@ -87,17 +93,22 @@ async def _run_chat_mode(console: Console, profile_id: str | None) -> int:
             )
             return 1
 
-    # --- Dependencies wiren
+    # --- Persistence wiren (Supabase wenn da, sonst Filesystem-Fallback)
+    supabase_client = _try_create_supabase_client(settings, console)
+    posts_repo, persistence_label = _build_posts_repository(supabase_client, prompts)
+    chat_memory, memory_label = _build_chat_memory(supabase_client, resolved_profile_id)
+    file_storage, storage_label = _build_file_storage(supabase_client)
+
+    # --- LLM + Agent
     llm = AnthropicProvider(api_key=settings.anthropic_api_key.get_secret_value())
-    chat_memory = InMemoryChatMemory()
 
     tools = ToolRegistry(
         [
             NowTool(),
             FetchUrlTool(),
-            SearchPostsTool(prompts, resolved_profile_id),
-            CreatePostTool(prompts, resolved_profile_id),
-            UpdatePostTool(prompts, resolved_profile_id),
+            SearchPostsTool(posts_repo, resolved_profile_id),
+            CreatePostTool(posts_repo, resolved_profile_id),
+            UpdatePostTool(posts_repo, resolved_profile_id),
             EvaluateWithPersonaTool(
                 prompts, llm, resolved_profile_id,
                 model=settings.llm_default_model,
@@ -105,8 +116,7 @@ async def _run_chat_mode(console: Console, profile_id: str | None) -> int:
         ]
     )
 
-    # generate_image-Tool nur aktivieren wenn fal.ai + Supabase voll konfiguriert
-    image_tool = _build_image_tool_if_configured(settings, console)
+    image_tool = _build_image_tool_if_configured(settings, console, file_storage)
     if image_tool is not None:
         tools.register(image_tool)
 
@@ -119,17 +129,18 @@ async def _run_chat_mode(console: Console, profile_id: str | None) -> int:
         model=settings.llm_default_model,
     )
 
-    # Messenger + Router
     cli_messenger = CLIMessenger(console=console, eve_name="Eve")
     router = MessageRouter()
     router.register(cli_messenger)
 
-    # --- Greeting
     console.print(
         Panel(
             f"[bold]Eve Chat[/bold] — Profil: [cyan]{resolved_profile_id}[/cyan]\n"
-            f"[dim]Tools: {', '.join(tools.names)}[/dim]\n"
-            f"[dim]Modell: {settings.llm_default_model}[/dim]\n\n"
+            f"[dim]Posts:      {persistence_label}\n"
+            f"History:    {memory_label}\n"
+            f"Storage:    {storage_label}\n"
+            f"Tools:      {', '.join(tools.names)}\n"
+            f"Modell:     {settings.llm_default_model}[/dim]\n\n"
             "[dim]Tippe deine Nachricht. Beenden mit leerer Zeile + Enter "
             "oder Strg+C.[/dim]",
             border_style="cyan",
@@ -174,10 +185,61 @@ async def _run_chat_mode(console: Console, profile_id: str | None) -> int:
         return 130
 
 
-def _build_image_tool_if_configured(settings, console: Console) -> GenerateImageTool | None:
-    """Baut GenerateImageTool nur wenn fal.ai + Supabase konfiguriert.
+# ----------------------------------------------------------------------
+# Wire-Helpers
+# ----------------------------------------------------------------------
+def _try_create_supabase_client(settings, console):
+    if not settings.supabase_url or not settings.supabase_service_key:
+        return None
+    try:
+        from supabase import create_client
 
-    Sonst läuft Eve ohne Image-Gen — alle anderen Tools funktionieren.
+        return create_client(
+            settings.supabase_url,
+            settings.supabase_service_key.get_secret_value(),
+        )
+    except Exception as e:
+        console.print(f"[yellow]Supabase-Client-Aufbau fehlgeschlagen: {e}[/yellow]")
+        return None
+
+
+def _build_posts_repository(
+    supabase_client, prompts
+) -> tuple[PostsRepository, str]:
+    if supabase_client is not None:
+        from eve.adapters.persistence.supabase_posts_repository import (
+            SupabasePostsRepository,
+        )
+
+        return SupabasePostsRepository(supabase_client), "Supabase (eve_posts)"
+    return FilesystemPostsRepository(prompts), "Filesystem (JSON-Sidecar)"
+
+
+def _build_chat_memory(supabase_client, profile_id: str) -> tuple[ChatMemory, str]:
+    if supabase_client is not None:
+        from eve.adapters.persistence.supabase_chat_memory import SupabaseChatMemory
+
+        return (
+            SupabaseChatMemory(supabase_client, profile_id=profile_id),
+            "Supabase (eve_chat_histories)",
+        )
+    return InMemoryChatMemory(), "In-Memory (verschwindet bei Exit)"
+
+
+def _build_file_storage(supabase_client) -> tuple[FileStorage | None, str]:
+    if supabase_client is None:
+        return None, "kein Supabase, Bilder bleiben auf fal.ai-CDN"
+    from eve.adapters.persistence.supabase_storage import SupabaseStorageAdapter
+
+    return SupabaseStorageAdapter(supabase_client), "Supabase Storage (Bilder werden migriert)"
+
+
+def _build_image_tool_if_configured(
+    settings, console: Console, file_storage: FileStorage | None
+) -> GenerateImageTool | None:
+    """Baut GenerateImageTool nur wenn fal.ai konfiguriert.
+
+    file_storage ist optional — wenn None, bleibt Bild auf fal.ai-CDN (24h).
     """
     if not settings.fal_api_key:
         console.print("[dim]· Image-Tool deaktiviert (FAL_API_KEY fehlt)[/dim]")
@@ -186,7 +248,7 @@ def _build_image_tool_if_configured(settings, console: Console) -> GenerateImage
         console.print(
             "[dim]· Image-Tool deaktiviert "
             "(SUPABASE_URL/SUPABASE_SERVICE_KEY fehlt — "
-            "Reference-Bilder kommen aus Storage)[/dim]"
+            "References kommen aus Storage)[/dim]"
         )
         return None
 
@@ -205,11 +267,14 @@ def _build_image_tool_if_configured(settings, console: Console) -> GenerateImage
         bucket=settings.supabase_storage_bucket,
         references_path=settings.fal_references_path,
     )
-    return GenerateImageTool(generator)
+    return GenerateImageTool(
+        generator,
+        storage=file_storage,
+        bucket=settings.supabase_storage_bucket,
+    )
 
 
 def main_sync() -> None:
-    """Standalone-Aufruf für `python -m apps.cli.cmd_run`."""
     import sys
 
     logging.basicConfig(level=logging.INFO)

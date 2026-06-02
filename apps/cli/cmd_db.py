@@ -29,11 +29,16 @@ def migrate(
 
 @app.command(name="print")
 def cmd_print(
-    file: str = typer.Option(None, "--file", "-f", help="Welche SQL-Datei (default: erste)"),
+    file: str = typer.Option(None, "--file", "-f", help="Welche SQL-Datei (default: main.sql)"),
     plain: bool = typer.Option(
         False, "--plain", help="Reines SQL ohne Highlighting (für Copy-Paste oder Datei-Redirect)"
     ),
+    show_all: bool = typer.Option(
+        False, "--all", help="Inkl. nummerierter History-Migrations (0001_, 0002_, ...)"
+    ),
 ) -> None:
-    """Druckt eine Migration zum Copy-Paste in den SQL Editor."""
-    args = type("A", (), {"command": "print", "file": file, "plain": plain, "open": False})()
+    """Druckt das Setup-SQL zum Copy-Paste in den Supabase SQL Editor."""
+    args = type(
+        "A", (), {"command": "print", "file": file, "plain": plain, "open": False, "all": show_all}
+    )()
     raise typer.Exit(code=asyncio.run(db_setup.main(args)))

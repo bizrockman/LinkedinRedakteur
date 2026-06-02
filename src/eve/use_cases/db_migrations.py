@@ -35,8 +35,29 @@ class MigrationFile:
         return cls(filename=path.name, path=path, sha256=sha, content=content)
 
 
+MAIN_SQL_FILE = "main.sql"
+
+
 def discover_migrations(migrations_dir: Path = DEFAULT_MIGRATIONS_DIR) -> list[MigrationFile]:
-    """Findet alle *.sql Dateien, sortiert alphabetisch."""
+    """Findet das `main.sql` Setup-File (idempotent, eine Datei für den User).
+
+    Die nummerierten Migrations (0001_, 0002_) bleiben als History im
+    Repo, werden aber nicht standardmäßig zurückgegeben. Wer sie explicit
+    braucht, kann `discover_all_migrations()` nutzen.
+    """
+    if not migrations_dir.exists():
+        return []
+    main = migrations_dir / MAIN_SQL_FILE
+    if not main.exists():
+        # Fallback: alle nummerierten Files
+        return [MigrationFile.load(p) for p in sorted(migrations_dir.glob("*.sql"))]
+    return [MigrationFile.load(main)]
+
+
+def discover_all_migrations(
+    migrations_dir: Path = DEFAULT_MIGRATIONS_DIR,
+) -> list[MigrationFile]:
+    """Alle .sql Files inkl. nummerierten History (für Audit / Manual-Reapply)."""
     if not migrations_dir.exists():
         return []
     return [MigrationFile.load(p) for p in sorted(migrations_dir.glob("*.sql"))]
