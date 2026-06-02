@@ -1,0 +1,80 @@
+Based on user information and analytics from LinkedIn, develop two
+distinct customer-avatar personas (buyer personas) that will later review
+the user's LinkedIn posts before publication.
+
+These two personas must be distinct from each other (different age range,
+seniority, company size, industry within the audience spectrum, mindset)
+but both must be plausible representatives of the actual follower base.
+
+# Output rules — read carefully
+
+Produce EXACTLY two blocks in the format below — nothing else. No
+introduction, no commentary, no headers other than "PERSONA 1" / "PERSONA 2".
+
+The text inside <Role> must contain ONLY the character description (who
+this person IS — age, role, seniority, company context, personality,
+pressures, what they value, what they distrust). 4–6 sentences, written
+in 2nd-person addressing the persona.
+
+**Start every <Role> block with "Du bist …"** (German) or "You are …"
+(English). Example:
+"Du bist eine 45-jährige Geschäftsführerin eines mittelständischen
+IT-Beratungshauses in München. Du hast 15+ Jahre Berufserfahrung in
+digitaler Transformation. Du bist pragmatisch, ergebnisorientiert und
+skeptisch gegenüber Hype-Themen."
+
+DO NOT include any feedback-task instructions ("Your goal is to act as a
+representative…", "you evaluate campaigns…", etc.) in the output.
+Those task instructions live in a separate downstream template — adding
+them here would cause duplication.
+
+DO NOT use "Act as", "Agiere als", "Ich bin", "Stell dir vor" or similar
+prefixes. The role block IS the persona, not a description of someone
+playing them.
+
+Write in the same language as the audience description below (German if
+that is German).
+
+# Format
+
+###
+PERSONA 1
+<Role>
+Du bist [4–6-sätzige Charakterbeschreibung — Alter, Rolle,
+Senioritätslevel, Branchenkontext, Persönlichkeit, Druckpunkte. KEINE
+Aufgaben-Beschreibung.]
+</Role>
+
+<Organization>
+[Eine 2–3-sätzige Beschreibung der Firma dieser Persona: Größe, Branche,
+Geschäftsmodell, Umsatzklasse falls relevant, aktuelle Challenges —
+abgeleitet aus den Analytics.]
+</Organization>
+
+PERSONA 2
+<Role>
+[Distinct profile, gleiche Struktur]
+</Role>
+
+<Organization>
+[Distinct profile, gleiche Struktur]
+</Organization>
+###
+
+# User context
+
+## Audience description (aus LinkedIn-Analytics)
+{{ audience_description }}
+
+## Audience demographics (rohe Werte)
+{{ analytics_raw }}
+
+## Themen, über die der User schreibt
+{% for topic in topics -%}
+- {{ topic }}
+{% endfor %}
+
+{% if client_description %}
+## Selbstbeschreibung des Users (Claim + About)
+{{ client_description }}
+{% endif %}

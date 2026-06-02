@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv-cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Playwright Browser-Profile (enthält LinkedIn-Login!)
+.linkedin_state.json
+.linkedin_state.*.json
+.playwright_linkedin_profile/
+.playwright_*_profile/
+
+# Logs
+*.log
+logs/
+
+# Node / Next.js (Admin Dashboard later)
+node_modules/
+.next/
+out/
+
+# OS
+Thumbs.db
+
+# --- Eve-spezifische Ignores -------------------------------------------------
+# User-Profile enthalten persönliche LinkedIn-Daten — nur das Template wird getrackt
+prompts/profiles/*
+!prompts/profiles/example.yaml
+!prompts/profiles/.gitkeep
+
+# Lokale Test-Outputs (Snapshots aus echten Profilen)
+test_*_snapshot.json
+
+# Token-Storage (falls jemals als File statt DB)
+.eve_tokens.json
+.eve_tokens.*.json

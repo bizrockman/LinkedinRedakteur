@@ -1,0 +1,119 @@
+# LinkedIn DOM Selectors — Multi-Fallback Strategy
+#
+# LinkedIn ändert React-generierte Klassennamen häufig. Für jedes Feld listen
+# wir mehrere Selektoren in Prioritätsreihenfolge auf — der erste Treffer
+# gewinnt. Wenn alle fehlschlagen, ist das Feld leer (kein Hard-Fail).
+#
+# Wartung: Eine wöchentliche Smoke-Test-Suite (siehe tests/integration/) läuft
+# gegen ein Test-Profil und meldet, sobald hier was bricht.
+#
+# Schema:
+#   <feldname>: [selector1, selector2, ...]    # erster Match gewinnt
+#
+# Spezialregeln:
+#   page_ready: Selektor, auf den wir nach Navigation warten
+#   post_card: Container für einen Post auf der Activity-Seite
+#   post_text_within_card: relativer Selektor innerhalb post_card
+
+version: "1"
+last_verified: "2026-05-22"
+
+# Wartet auf Hauptinhalt nach Navigation
+page_ready:
+  - "main"
+
+# Profilfelder (auf der Hauptprofilseite)
+profile:
+  name:
+    - "h1.text-heading-xlarge"
+    - "h1.inline.t-24"
+    - "h1"
+
+  headline:
+    - "div.text-body-medium.break-words"
+    - "div.pv-text-details__left-panel .text-body-medium"
+
+  location:
+    - "span.text-body-small.inline.t-black--light.break-words"
+    - ".pv-text-details__left-panel .text-body-small"
+
+  # About-Section: identifiziert über das id="about"-Anchor
+  about_section:
+    - "section:has(div#about)"
+    - "div#about"
+
+  # Follower-Zahl (nur eigenes Profil zuverlässig sichtbar)
+  followers:
+    - "span.t-bold:has-text('Follower')"
+    - ".pv-recent-activity-section__follower-count"
+
+# Posts auf /recent-activity/all/ (chronologisch sortiert — Legacy-Pfad)
+posts:
+  card:
+    - "div.feed-shared-update-v2"
+    - "div[data-urn^='urn:li:activity:']"
+  text_within_card:
+    - ".update-components-text"
+    - ".feed-shared-text"
+    - "span.break-words"
+  social_counts_within_card:
+    likes:
+      - ".social-details-social-counts__reactions-count"
+    comments:
+      - ".social-details-social-counts__comments"
+    reposts:
+      - ".social-details-social-counts__shares-count"
+
+# Top-Performer auf /analytics/creator/top-posts/ (nach Engagement sortiert)
+# Diese Seite zeigt typischerweise bis zu 50 Top-Posts mit Stats.
+top_posts:
+  # URL-Pfad (ohne Query-String, der wird parametrisiert)
+  url_path: "/analytics/creator/top-posts/"
+  url_query: "metricType=ENGAGEMENTS&timeRange=past_365_days"
+
+  card:
+    - "a.member-analytics-addon__mini-update-item"
+
+  # Text innerhalb der Card (inkl. Byline-Vorspann)
+  text_within_card:
+    - "div.member-analytics-addon__mini-update-item--update"
+
+  # Engagement-Block: enthält "335 / Engagement"-artige Texte
+  engagement_within_card:
+    - "div.member-analytics-addon__cta-item-with-secondary-metric"
+
+  # Wir entfernen diesen Byline-Vorspann vom Post-Text (Regex)
+  byline_regex: '^[^\n]*hat dies gepostet[^\n]*\n+'
+
+# Audience Demographics — /analytics/demographic-detail/...
+# Liefert 5-6 Kategorien (Jobbezeichnung, Standort, Branche, Karrierestufe,
+# Firmengröße, ggf. Berufserfahrung), je mit Top-5-Einträgen + Prozenten.
+audience:
+  url_path: "/analytics/demographic-detail/urn:li:fsd_profile:profile/"
+  url_query: "metricType=MEMBER_FOLLOWERS"
+
+  # Container pro Kategorie
+  chart:
+    - "li.member-analytics-addon-color-bar-chart__chart"
+
+  # Kategorie-Heading (relativ zum chart)
+  chart_heading:
+    - ".text-HeadingLarge"
+
+  # Einzelner Daten-Row (relativ zum chart)
+  chart_row:
+    - ".display-flex.full-width"
+
+  # Innerhalb einer row: Label + Prozentwert
+  row_label:
+    - ".text-body-small-bold"
+  row_percentage:
+    - ".member-analytics-addon-color-bar-chart-bar__percentage"
+
+# Login-/Session-Check
+login:
+  # URLs, die als "logged in" gelten (Regex)
+  logged_in_url_patterns:
+    - "https://www.linkedin.com/feed/"
+    - "https://www.linkedin.com/in/"
+  login_url: "https://www.linkedin.com/login"
